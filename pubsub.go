@@ -16,6 +16,8 @@ const (
 	UNSUBSCRIBE = "unsubscribe"
 )
 
+const skipFrameCount = 3
+
 type Broker struct {
 	log           *zerolog.Logger
 	Clients       []Client
