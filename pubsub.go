@@ -2,9 +2,11 @@ package pubsub
 
 import (
 	"encoding/json"
-	"fmt"
+	"os"
+	"strings"
+	"time"
 
-	"github.com/labstack/gommon/log"
+	"github.com/rs/zerolog"
 	"golang.org/x/net/websocket"
 )
 
@@ -15,6 +17,7 @@ const (
 )
 
 type Broker struct {
+	log           *zerolog.Logger
 	Clients       []Client
 	Subscriptions []Subscription
 }
@@ -36,30 +39,52 @@ type Subscription struct {
 	Client *Client
 }
 
-func (ps *Broker) AddClient(client Client) {
+func New(logLevel string) *Broker {
+	var l zerolog.Level
 
+	switch strings.ToLower(logLevel) {
+	case "error":
+		l = zerolog.ErrorLevel
+	case "warn":
+		l = zerolog.WarnLevel
+	case "info":
+		l = zerolog.InfoLevel
+	case "debug":
+		l = zerolog.DebugLevel
+	default:
+		l = zerolog.InfoLevel
+	}
+
+	zerolog.SetGlobalLevel(l)
+
+	output := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: time.RFC3339,
+	}
+	logger := zerolog.New(output).With().Timestamp().CallerWithSkipFrameCount(zerolog.CallerSkipFrameCount + skipFrameCount).Logger()
+
+	return &Broker{
+		log: &logger,
+	}
+}
+
+func (ps *Broker) AddClient(client Client) {
 	ps.Clients = append(ps.Clients, client)
 }
 
 func (ps *Broker) RemoveClient(client Client) *Broker {
-
 	// first remove all subscriptions by this client
-
 	for index, sub := range ps.Subscriptions {
-
 		if client.ID == sub.Client.ID {
 			ps.Subscriptions = append(ps.Subscriptions[:index], ps.Subscriptions[index+1:]...)
 		}
 	}
 
 	// remove client from the list
-
 	for index, c := range ps.Clients {
-
 		if c.ID == client.ID {
 			ps.Clients = append(ps.Clients[:index], ps.Clients[index+1:]...)
 		}
-
 	}
 
 	return ps
@@ -77,11 +102,8 @@ func (ps *Broker) GetSubscriptions(topic string, client *Client) []Subscription 
 				subscriptionList = append(subscriptionList, subscription)
 
 			}
-		} else {
-
-			if subscription.Topic == topic {
-				subscriptionList = append(subscriptionList, subscription)
-			}
+		} else if subscription.Topic == topic {
+			subscriptionList = append(subscriptionList, subscription)
 		}
 	}
 
@@ -89,13 +111,10 @@ func (ps *Broker) GetSubscriptions(topic string, client *Client) []Subscription 
 }
 
 func (ps *Broker) Subscribe(client *Client, topic string) *Broker {
-
 	clientSubs := ps.GetSubscriptions(topic, client)
 
 	if len(clientSubs) > 0 {
-
 		// client is subscribed this topic before
-
 		return ps
 	}
 
@@ -110,19 +129,18 @@ func (ps *Broker) Subscribe(client *Client, topic string) *Broker {
 }
 
 func (ps *Broker) Publish(topic string, message []byte, excludeClient *Client) {
-
 	subscriptions := ps.GetSubscriptions(topic, nil)
 
 	for _, sub := range subscriptions {
 
-		fmt.Printf("Sending to client id %s message is %s \n", sub.Client.ID, message)
+		ps.log.Debug().Msgf("Sending to client id %s message is %s \n", sub.Client.ID, message)
 		err := sub.Client.Send(message)
 		if err != nil {
-			log.Errorf("error sending message to client: %w", err)
+			ps.log.Error().Msgf("error sending message to client: %w", err)
 		}
 	}
-
 }
+
 func (client *Client) Send(message []byte) error {
 	return websocket.Message.Send(client.Connection, message)
 }
@@ -146,22 +164,22 @@ func (ps *Broker) HandleReceiveMessage(client Client, payload []byte) *Broker {
 
 	err := json.Unmarshal(payload, &m)
 	if err != nil {
-		fmt.Println("This is not correct message payload")
+		ps.log.Debug().Msg("This is not correct message payload")
 		return ps
 	}
 
-	fmt.Printf("handle message %s from %s", m.Action, client.Name)
+	ps.log.Debug().Msgf("handle message %s from %s", m.Action, client.Name)
 	switch m.Action {
 	case PUBLISH:
-		fmt.Println("publish message")
+		ps.log.Debug().Msg("publish message")
 		ps.Publish(m.Topic, m.Message, nil)
 		break
 	case SUBSCRIBE:
 		ps.Subscribe(&client, m.Topic)
-		fmt.Println("new subscriber to topic", m.Topic, len(ps.Subscriptions), client.ID)
+		ps.log.Debug().Msg("new subscriber to topic", m.Topic, len(ps.Subscriptions), client.ID)
 		break
 	case UNSUBSCRIBE:
-		fmt.Println("Client want to unsubscribe the topic", m.Topic, client.ID)
+		ps.log.Debug().Msg("Client want to unsubscribe the topic", m.Topic, client.ID)
 		ps.Unsubscribe(&client, m.Topic)
 		break
 	default:
