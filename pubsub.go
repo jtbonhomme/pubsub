@@ -176,10 +176,10 @@ func (ps *Broker) HandleReceiveMessage(client Client, payload []byte) *Broker {
 		break
 	case SUBSCRIBE:
 		ps.Subscribe(&client, m.Topic)
-		ps.log.Debug().Msg("new subscriber to topic", m.Topic, len(ps.Subscriptions), client.ID)
+		ps.log.Debug().Msgf("client %s (%s) subscribes to topic %s", client.Name, client.ID, m.Topic)
 		break
 	case UNSUBSCRIBE:
-		ps.log.Debug().Msg("Client want to unsubscribe the topic", m.Topic, client.ID)
+		ps.log.Debug().Msgf("client %s (%s) unsubscribes from topic", client.Name, client.ID, m.Topic)
 		ps.Unsubscribe(&client, m.Topic)
 		break
 	default:
