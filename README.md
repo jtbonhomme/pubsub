@@ -1,5 +1,8 @@
 # pubsub
-Simple pubsub protocol implementation in Golang.
+Simple pubsub over websocket service implementation in Golang.
+The service is not responsible for websocket server management.
+
+**Note**: this library is still in development phase, interface may change often.
 
 ## Install
 

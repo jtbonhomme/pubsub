@@ -3,52 +3,50 @@ package pubsub
 import (
 	"encoding/json"
 
+	"github.com/jtbonhomme/pubsub/client"
 	"github.com/rs/zerolog"
-	"golang.org/x/net/websocket"
 )
 
 const (
-	PUBLISH     = "publish"
-	SUBSCRIBE   = "subscribe"
-	UNSUBSCRIBE = "unsubscribe"
+	PUBLISH     = "publish"     // Publish a message.
+	SUBSCRIBE   = "subscribe"   // Subscribe to a topic.
+	UNSUBSCRIBE = "unsubscribe" // Unsubscribe from a topic.
 )
 
-const skipFrameCount = 3
-
+// Broker is a pubsub service message broker.
 type Broker struct {
 	log           *zerolog.Logger
-	Clients       []Client
-	Subscriptions []Subscription
+	Clients       []*client.Client // List of active clients of the broker.
+	Subscriptions []Subscription   // List of topic subscriptions.
 }
 
-type Client struct {
-	Name       string
-	ID         string
-	Connection *websocket.Conn
-}
-
+// Message is describe a communication message through a topic in the pubsub service.
 type Message struct {
-	Action  string          `json:"action"`
-	Topic   string          `json:"topic"`
-	Message json.RawMessage `json:"message"`
+	Action  string          `json:"action"`  // Action can be `PUBLISH`, `SUBSCRIBE` or `UNSUBSCRIBE`.
+	Topic   string          `json:"topic"`   // Topic is a pubsub service topic name.
+	Payload json.RawMessage `json:"message"` // Payload is sent in the topic in case action is `PUBLISH`.
 }
 
+// Subscription represents a pubsub service client subscribing to a topic.
 type Subscription struct {
-	Topic  string
-	Client *Client
+	Topic  string         // Topic is the name of the topic the client subscribes to.
+	Client *client.Client // Client is a pubsub service client.
 }
 
+// New instantiates a new pubsub service broker.
 func New(logger *zerolog.Logger) *Broker {
 	return &Broker{
 		log: logger,
 	}
 }
 
-func (ps *Broker) AddClient(client Client) {
+// AddClient registers a client to the pubsub service.
+func (ps *Broker) AddClient(client *client.Client) {
 	ps.Clients = append(ps.Clients, client)
 }
 
-func (ps *Broker) RemoveClient(client Client) *Broker {
+// RmoveClient unregisters a client from the pubsub service.
+func (ps *Broker) RemoveClient(client *client.Client) *Broker {
 	// first remove all subscriptions by this client
 	for index, sub := range ps.Subscriptions {
 		if client.ID == sub.Client.ID {
@@ -66,14 +64,12 @@ func (ps *Broker) RemoveClient(client Client) *Broker {
 	return ps
 }
 
-func (ps *Broker) GetSubscriptions(topic string, client *Client) []Subscription {
-
+// GetSubscriptions lists active subscriptions for a topic or a client.
+func (ps *Broker) GetSubscriptions(topic string, client *client.Client) []Subscription {
 	var subscriptionList []Subscription
 
 	for _, subscription := range ps.Subscriptions {
-
 		if client != nil {
-
 			if subscription.Client.ID == client.ID && subscription.Topic == topic {
 				subscriptionList = append(subscriptionList, subscription)
 
@@ -86,7 +82,8 @@ func (ps *Broker) GetSubscriptions(topic string, client *Client) []Subscription 
 	return subscriptionList
 }
 
-func (ps *Broker) Subscribe(client *Client, topic string) *Broker {
+// Subscribe adds a subscription from a client to a topic.
+func (ps *Broker) Subscribe(client *client.Client, topic string) *Broker {
 	clientSubs := ps.GetSubscriptions(topic, client)
 
 	if len(clientSubs) > 0 {
@@ -104,7 +101,9 @@ func (ps *Broker) Subscribe(client *Client, topic string) *Broker {
 	return ps
 }
 
-func (ps *Broker) Publish(topic string, message []byte, excludeClient *Client) {
+// Publish sends a message in a topic.
+// Clients can be excluded from receiving the message.
+func (ps *Broker) Publish(topic string, message []byte, excludeClient *client.Client) {
 	subscriptions := ps.GetSubscriptions(topic, nil)
 
 	for _, sub := range subscriptions {
@@ -117,12 +116,8 @@ func (ps *Broker) Publish(topic string, message []byte, excludeClient *Client) {
 	}
 }
 
-func (client *Client) Send(message []byte) error {
-	return websocket.Message.Send(client.Connection, message)
-}
-
-func (ps *Broker) Unsubscribe(client *Client, topic string) *Broker {
-
+// Unsubscribe removes a client's subscription from a topic.
+func (ps *Broker) Unsubscribe(client *client.Client, topic string) *Broker {
 	//clientSubscriptions := ps.GetSubscriptions(topic, client)
 	for index, sub := range ps.Subscriptions {
 
@@ -135,7 +130,8 @@ func (ps *Broker) Unsubscribe(client *Client, topic string) *Broker {
 	return ps
 }
 
-func (ps *Broker) HandleReceiveMessage(client Client, payload []byte) *Broker {
+// HandleReceiveMessage executes action of a receive Message.
+func (ps *Broker) HandleReceiveMessage(client *client.Client, payload []byte) *Broker {
 	m := Message{}
 
 	err := json.Unmarshal(payload, &m)
@@ -148,15 +144,15 @@ func (ps *Broker) HandleReceiveMessage(client Client, payload []byte) *Broker {
 	switch m.Action {
 	case PUBLISH:
 		ps.log.Debug().Msg("publish message")
-		ps.Publish(m.Topic, m.Message, nil)
+		ps.Publish(m.Topic, m.Payload, nil)
 		break
 	case SUBSCRIBE:
-		ps.Subscribe(&client, m.Topic)
+		ps.Subscribe(client, m.Topic)
 		ps.log.Debug().Msgf("client %s (%s) subscribes to topic %s", client.Name, client.ID, m.Topic)
 		break
 	case UNSUBSCRIBE:
 		ps.log.Debug().Msgf("client %s (%s) unsubscribes from topic", client.Name, client.ID, m.Topic)
-		ps.Unsubscribe(&client, m.Topic)
+		ps.Unsubscribe(client, m.Topic)
 		break
 	default:
 		break
