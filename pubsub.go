@@ -2,9 +2,6 @@ package pubsub
 
 import (
 	"encoding/json"
-	"os"
-	"strings"
-	"time"
 
 	"github.com/rs/zerolog"
 	"golang.org/x/net/websocket"
@@ -41,32 +38,9 @@ type Subscription struct {
 	Client *Client
 }
 
-func New(logLevel string) *Broker {
-	var l zerolog.Level
-
-	switch strings.ToLower(logLevel) {
-	case "error":
-		l = zerolog.ErrorLevel
-	case "warn":
-		l = zerolog.WarnLevel
-	case "info":
-		l = zerolog.InfoLevel
-	case "debug":
-		l = zerolog.DebugLevel
-	default:
-		l = zerolog.InfoLevel
-	}
-
-	zerolog.SetGlobalLevel(l)
-
-	output := zerolog.ConsoleWriter{
-		Out:        os.Stderr,
-		TimeFormat: time.RFC3339,
-	}
-	logger := zerolog.New(output).With().Timestamp().CallerWithSkipFrameCount(zerolog.CallerSkipFrameCount + skipFrameCount).Logger()
-
+func New(logger *zerolog.Logger) *Broker {
 	return &Broker{
-		log: &logger,
+		log: logger,
 	}
 }
 
